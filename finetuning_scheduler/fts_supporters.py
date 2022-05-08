@@ -761,6 +761,7 @@ class SchedulingMixin(ABC):
         thawed_pl: List,
         no_decay: Optional[list] = None,
         lr: Optional[float] = None,
+        lr_scheduler: Optional[dict] = None,
         initial_denom_lr: float = 10.0,
     ) -> None:
         """Add optimizer parameter groups associated with the next scheduled finetuning depth/level and extend the
@@ -782,9 +783,11 @@ class SchedulingMixin(ABC):
         if len(thawed_pl) == 0:
             rank_zero_warn("No thawed parameters passed so no new optimizer groups will be added.")
         else:
-            params_lr = optimizer.param_groups[0]["lr"] if lr is None else float(lr)
-            denom_lr = initial_denom_lr if lr is None else 1.0
-            lr_factor = params_lr / denom_lr
+            # reset set previous param_groups lr
+            lr_factor = optimizer.param_groups[0]["lr"] if lr is None else float(lr)
+            for pg in optimizer.param_groups:
+                pg["lr"] = lr_factor
+
             added_pgs = 0
             if no_decay:
                 optimizer.add_param_group(
@@ -817,9 +820,16 @@ class SchedulingMixin(ABC):
                     }
                 )
                 added_pgs = 1
-            # extend base_lrs for added groups rather than re-initialize lr_scheduler(s)
-            for config in module.trainer.lr_scheduler_configs:  # type: ignore[union-attr]
-                config.scheduler.base_lrs.extend([lr_factor] * added_pgs)
+
+            if lr_scheduler is None:
+                # extend base_lrs for added groups rather than re-initialize lr_scheduler(s)
+                for config in module.trainer.lr_scheduler_configs:  # type: ignore[union-attr]
+                    config.scheduler.base_lrs.extend([lr_factor] * added_pgs)
+            else:
+                for config in module.trainer.lr_scheduler_configs:  # type: ignore[union-attr]
+                    class_path = lr_scheduler["schedule_init"]["class_path"]
+                    init_args = lr_scheduler["schedule_init"]["init_args"]
+                    config.scheduler = class_path(optimizer=optimizer, **init_args)
 
     @staticmethod
     def sync(objs: Tuple, asets: Tuple, agg_func: Callable = max) -> None:

@@ -219,6 +219,7 @@ class FinetuningScheduler(BaseFinetuning, SchedulingMixin, CallbackDepMixin):
                     optimizer=optimizer,
                     thawed_pl=next_tl["params"],
                     lr=next_tl["lr"],
+                    lr_scheduler=next_tl["new_scheduler"],
                     no_decay=getattr(self.pl_module, "no_decay", None),
                 )
 
