@@ -41,6 +41,7 @@ from pytorch_lightning.utilities.exceptions import MisconfigurationException
 from pytorch_lightning.utilities.rank_zero import rank_zero_debug
 from torch.nn import Module
 from torch.optim.optimizer import Optimizer
+import transformers
 
 log = logging.getLogger(__name__)
 
@@ -783,10 +784,15 @@ class SchedulingMixin(ABC):
         if len(thawed_pl) == 0:
             rank_zero_warn("No thawed parameters passed so no new optimizer groups will be added.")
         else:
+            # set stage related attributes
+            if getattr(module, "stage", None):
+                module.stage += 1
+
             # reset set previous param_groups lr
             lr_factor = optimizer.param_groups[0]["lr"] if lr is None else float(lr)
             for pg in optimizer.param_groups:
-                pg["lr"] = lr_factor
+                pg["lr"] = 0.0
+                pg["initial_lr"] = lr_factor
 
             added_pgs = 0
             if no_decay:
@@ -820,7 +826,7 @@ class SchedulingMixin(ABC):
                     }
                 )
                 added_pgs = 1
-
+            
             if lr_scheduler is None:
                 # extend base_lrs for added groups rather than re-initialize lr_scheduler(s)
                 for config in module.trainer.lr_scheduler_configs:  # type: ignore[union-attr]
@@ -829,7 +835,8 @@ class SchedulingMixin(ABC):
                 for config in module.trainer.lr_scheduler_configs:  # type: ignore[union-attr]
                     class_path = lr_scheduler["schedule_init"]["class_path"]
                     init_args = lr_scheduler["schedule_init"]["init_args"]
-                    config.scheduler = class_path(optimizer=optimizer, **init_args)
+                    config.scheduler = eval(class_path)(optimizer, **init_args)
+            print("add optimizer group end")
 
     @staticmethod
     def sync(objs: Tuple, asets: Tuple, agg_func: Callable = max) -> None:
