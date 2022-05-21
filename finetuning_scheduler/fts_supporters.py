@@ -788,12 +788,9 @@ class SchedulingMixin(ABC):
             if getattr(module, "stage", None):
                 module.stage += 1
 
-            # reset set previous param_groups lr
-            lr_factor = optimizer.param_groups[0]["lr"] if lr is None else float(lr)
-            for pg in optimizer.param_groups:
-                pg["lr"] = 0.0
-                pg["initial_lr"] = lr_factor
-
+            params_lr = optimizer.param_groups[0]["lr"] if lr is None else float(lr)
+            denom_lr = initial_denom_lr if lr is None else 1.0
+            lr_factor = params_lr / denom_lr
             added_pgs = 0
             if no_decay:
                 optimizer.add_param_group(
@@ -832,11 +829,14 @@ class SchedulingMixin(ABC):
                 for config in module.trainer.lr_scheduler_configs:  # type: ignore[union-attr]
                     config.scheduler.base_lrs.extend([lr_factor] * added_pgs)
             else:
+                # only for transformer warmup lr scheduler
+                for pg in optimizer.param_groups:
+                    pg["lr"] = 0.0
+                    pg["initial_lr"] = params_lr
                 for config in module.trainer.lr_scheduler_configs:  # type: ignore[union-attr]
                     class_path = lr_scheduler["schedule_init"]["class_path"]
                     init_args = lr_scheduler["schedule_init"]["init_args"]
                     config.scheduler = eval(class_path)(optimizer, **init_args)
-            print("add optimizer group end")
 
     @staticmethod
     def sync(objs: Tuple, asets: Tuple, agg_func: Callable = max) -> None:
